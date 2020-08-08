@@ -24,9 +24,9 @@ import (
 
 // initCmd represents the init command
 var editCmd = &cobra.Command{
-	Use:   "edit",
-	Short: "edit role arn of specific key",
-	Long: "edit role arn of specific key",
+	Use:     "edit",
+	Short:   "edit role arn of specific key",
+	Long:    "edit role arn of specific key",
 	Aliases: []string{"e"},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := EditRole(); err != nil {

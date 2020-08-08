@@ -25,32 +25,37 @@ import (
 )
 
 var cfgFile string
+var profile string
+var region string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "setup",
 	Short: "A command line tool for assuming role on AWS environment",
 	Long:  `A command line tool for assuming role on AWS environment`,
+	SilenceUsage: true,
 	Args: func(cmd *cobra.Command, args []string) error {
 		return Assume(os.Stdout, args)
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 	},
-
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Println(err)
 		os.Exit(1)
 	}
 }
 
 func init() {
 	cobra.OnInitialize(initConfig)
-	rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.setup.yaml)")
+	rootCmd.PersistentFlags().StringVar(&profile, "profile", "default", "AWS profile")
+	rootCmd.PersistentFlags().StringVar(&region, "region", "ap-northeast-2", "AWS region")
+
+	viper.BindPFlag("profile", rootCmd.PersistentFlags().Lookup("profile"))
+	viper.BindPFlag("region", rootCmd.PersistentFlags().Lookup("region"))
 }
 
 // initConfig reads in config file and ENV variables if set.

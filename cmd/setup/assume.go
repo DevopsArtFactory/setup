@@ -17,7 +17,6 @@ package setup
 
 import (
 	"fmt"
-	"github.com/mitchellh/go-homedir"
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
@@ -26,8 +25,14 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/GwonsooLee/kubenx/pkg/aws"
 	"github.com/GwonsooLee/kubenx/pkg/color"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/credentials"
+	"github.com/aws/aws-sdk-go/aws/defaults"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/sts"
+	"github.com/mitchellh/go-homedir"
+	"github.com/spf13/viper"
 )
 
 var (
@@ -35,6 +40,7 @@ var (
 )
 
 type AssumeList struct {
+	Profile		   string `yaml:"profile"`
 	SessionName    string       `yaml:"session_name"`
 	AssumeRoleList []AssumeRole `yaml:"assume_role_list"`
 }
@@ -85,9 +91,15 @@ func Assume(out io.Writer, args []string) error {
 		return fmt.Errorf("wrong command. please check `setup help")
 	}
 
-	assumeCreds := aws.AssumeRole(targetRole.RoleArn, assumeMap.SessionName)
+	assumeCreds, err := getAssumeCreds(targetRole.RoleArn, assumeMap.SessionName)
+	if err != nil {
+		return err
+	}
 
 	pbcopy := exec.Command("pbcopy")
+	if pbcopy == nil {
+
+	}
 	in, _ := pbcopy.StdinPipe()
 
 	if err := pbcopy.Start(); err != nil {
@@ -121,20 +133,53 @@ func Assume(out io.Writer, args []string) error {
 }
 
 func getAssumeList() (*AssumeList, error) {
+	aList, err := getTotalAssumeList()
+	if err != nil {
+		return nil, err
+	}
+
+	if len(aList) == 0 {
+		return nil, fmt.Errorf("You need to upgrade setup, please use `setup upgrade`")
+	}
+
+	profile := viper.GetString("profile")
+	for _, as := range aList {
+		if as.Profile == profile {
+			return &as, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func getTotalAssumeList() ([]AssumeList, error) {
 	if !checkFileExists(configFile) {
 		return nil, fmt.Errorf("%s does not exist. please use `setup init`", configFile)
 	}
 
-	a := AssumeList{}
+	aList := []AssumeList{}
 
 	file, err := ioutil.ReadFile(configFile)
 	if err != nil {
 		return nil, err
 	}
 
-	yaml.Unmarshal(file, &a)
+	yaml.Unmarshal(file, &aList)
 
-	return &a, nil
+	return aList, nil
+}
+
+func getSingleAssumeList() (*AssumeList, error) {
+	al := AssumeList{}
+
+	file, err := ioutil.ReadFile(configFile)
+	if err != nil {
+		return nil, err
+	}
+
+	yaml.Unmarshal(file, &al)
+
+	return &al, nil
 }
 
 func home() string {
@@ -147,12 +192,45 @@ func AddNewAssumeRole(args []string) error {
 		return fmt.Errorf("usage: setup add [key]")
 	}
 
+	currentProfile :=  viper.GetString("profile")
+	color.Blue.Fprintf(os.Stdout, "current profile: %s", currentProfile)
+	aList, err := getTotalAssumeList()
+	if err != nil {
+		return err
+	}
+
+	hasProfile := false
+	for _, al := range aList {
+		if al.Profile == currentProfile {
+			hasProfile = true
+		}
+	}
+
+	var sessionName string
+	if ! hasProfile {
+		color.Red.Fprintf(os.Stdout, "register new profile first, %s", currentProfile)
+		prompt := &survey.Input{
+			Message: "New session name: ",
+		}
+		survey.AskOne(prompt, &sessionName)
+
+		aList = append(aList, AssumeList{
+			Profile:        currentProfile,
+			SessionName:    sessionName,
+			AssumeRoleList: []AssumeRole{},
+		})
+	}
+
 	var target string
 	if len(args) == 0 {
 		prompt := &survey.Input{
 			Message: "Key: ",
 		}
 		survey.AskOne(prompt, &target)
+
+		if len(target) == 0 {
+			return fmt.Errorf("you have to input key")
+		}
 	} else {
 		target = args[0]
 	}
@@ -163,21 +241,20 @@ func AddNewAssumeRole(args []string) error {
 	}
 	survey.AskOne(prompt, &assumeRole)
 
-	if assumeRole == "" {
+	if len(assumeRole) == 0 {
 		return fmt.Errorf("you have to specify ARN of IAM role")
 	}
 
-	al, err := getAssumeList()
-	if err != nil {
-		return fmt.Errorf(err.Error())
+	for i, al := range aList {
+		if al.Profile == currentProfile {
+			aList[i].AssumeRoleList = append(al.AssumeRoleList, AssumeRole{
+				Key:     target,
+				RoleArn: assumeRole,
+			})
+		}
 	}
 
-	al.AssumeRoleList = append(al.AssumeRoleList, AssumeRole{
-		Key:     target,
-		RoleArn: assumeRole,
-	})
-
-	if err := SyncFile(*al); err != nil {
+	if err := SyncFile(aList); err != nil {
 		return err
 	}
 
@@ -202,18 +279,52 @@ func Setup() error {
 	}
 	survey.AskOne(prompt, &sessionName)
 
-	al := AssumeList{}
-	al.SessionName = sessionName
+	aList := []AssumeList{}
+	aList = append(aList, AssumeList{
+		Profile:        "default",
+		SessionName:    sessionName,
+	})
 
-	if err := SyncFile(al); err != nil {
+	if err := SyncFile(aList); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func SyncFile(al AssumeList) error {
-	writeData, err := yaml.Marshal(al)
+func Upgrade() error {
+	aList, err := getTotalAssumeList()
+	if err != nil {
+		return err
+	}
+
+	if len(aList) == 0 {
+		al, err := getSingleAssumeList()
+		if err != nil {
+			return err
+		}
+
+		if al == nil {
+			return fmt.Errorf("you do not have any setup profile, please use `setup init`")
+		}
+
+		al.Profile = "default"
+
+		aList = append(aList, *al)
+
+		if err := SyncFile(aList); err != nil {
+			return err
+		}
+		color.Blue.Fprintf(os.Stdout, "successfully upgrade to latest")
+	} else {
+		color.Blue.Fprintf(os.Stdout, "already latest version setup")
+	}
+
+	return nil
+}
+
+func SyncFile(aList []AssumeList) error {
+	writeData, err := yaml.Marshal(aList)
 	if err != nil {
 		return err
 	}
@@ -238,32 +349,43 @@ func ListRole() error {
 
 	out := os.Stdout
 	color.Green.Fprintf(out, "[current role list]")
-	color.Cyan.Fprintf(out, strings.Join(assumeList,"\n"))
+	color.Cyan.Fprintf(out, strings.Join(assumeList, "\n"))
 
 	return nil
 }
 
 func EditRole() error {
 	out := os.Stdout
-	al, err := getAssumeList()
+
+	currentProfile :=  viper.GetString("profile")
+	color.Blue.Fprintf(out, "current profile: %s", currentProfile)
+
+	aList, err := getTotalAssumeList()
 	if err != nil {
-		return fmt.Errorf(err.Error())
+		return err
 	}
 
-	assumeList := []string{}
-	for _, v := range al.AssumeRoleList {
-		assumeList = append(assumeList, v.Key)
+	newA := AssumeList{}
+	for _, as := range aList {
+		if as.Profile == currentProfile {
+			newA = as
+		}
+	}
+
+	assumeKeys := []string{}
+	for _, v := range newA.AssumeRoleList {
+		assumeKeys = append(assumeKeys, v.Key)
 	}
 
 	var target string
 	prompt := &survey.Select{
 		Message: "Choose account to edit:",
-		Options: assumeList,
+		Options: assumeKeys,
 	}
 	survey.AskOne(prompt, &target)
 
-	if target == "" {
-		fmt.Errorf("you have to choose key")
+	if len(target) == 0{
+		return fmt.Errorf("you have to choose key")
 	}
 
 	var assumeRole string
@@ -271,17 +393,23 @@ func EditRole() error {
 		Message: "New role ARN: ",
 	}, &assumeRole)
 
-	if assumeRole == "" {
-		fmt.Errorf("you have to specifiy assume role ARN")
+	if len(assumeRole) == 0 {
+		return fmt.Errorf("you have to specifiy assume role ARN")
 	}
 
-	for i, v := range al.AssumeRoleList {
+	for i, v := range newA.AssumeRoleList {
 		if v.Key == target {
-			al.AssumeRoleList[i].RoleArn = assumeRole
+			newA.AssumeRoleList[i].RoleArn = assumeRole
 		}
 	}
 
-	if err := SyncFile(*al); err != nil {
+	for i, as := range aList {
+		if as.Profile == currentProfile {
+			aList[i] = newA
+		}
+	}
+
+	if err := SyncFile(aList); err != nil {
 		return err
 	}
 
@@ -292,20 +420,31 @@ func EditRole() error {
 
 func DeleteCmd() error {
 	out := os.Stdout
-	al, err := getAssumeList()
+
+	currentProfile :=  viper.GetString("profile")
+	color.Blue.Fprintf(out, "current profile: %s", currentProfile)
+
+	aList, err := getTotalAssumeList()
 	if err != nil {
-		return fmt.Errorf(err.Error())
+		return err
 	}
 
-	assumeList := []string{}
-	for _, v := range al.AssumeRoleList {
-		assumeList = append(assumeList, v.Key)
+	newA := AssumeList{}
+	for _, as := range aList {
+		if as.Profile == currentProfile {
+			newA = as
+		}
+	}
+
+	assumeKeys := []string{}
+	for _, v := range newA.AssumeRoleList {
+		assumeKeys = append(assumeKeys, v.Key)
 	}
 
 	var target string
 	prompt := &survey.Select{
 		Message: "Choose account to delete:",
-		Options: assumeList,
+		Options: assumeKeys,
 	}
 	survey.AskOne(prompt, &target)
 
@@ -314,19 +453,86 @@ func DeleteCmd() error {
 	}
 
 	newList := []AssumeRole{}
-	for _, v := range al.AssumeRoleList {
+	for _, v := range newA.AssumeRoleList {
 		if v.Key != target {
 			newList = append(newList, v)
 		}
 	}
 
-	al.AssumeRoleList = newList
+	newA.AssumeRoleList = newList
 
-	if err := SyncFile(*al); err != nil {
+	for i, as := range aList {
+		if as.Profile == currentProfile {
+			aList[i] = newA
+		}
+	}
+
+	if err := SyncFile(aList); err != nil {
 		return err
 	}
 
 	color.Green.Fprintf(out, "%s is deleted", target)
 
 	return nil
+}
+
+func getAssumeCreds(arn string, session_name string) (*sts.Credentials, error) {
+	svc := getSTSSession()
+	input := &sts.AssumeRoleInput{
+		RoleArn:         aws.String(arn),
+		RoleSessionName: aws.String(session_name),
+	}
+
+	result, err := svc.AssumeRole(input)
+	if err != nil {
+		return nil, err
+	}
+	return result.Credentials, nil
+}
+
+func getSTSSession() *sts.STS {
+	ResetAWSEnvironmentVariable()
+
+	awsRegion := viper.GetString("region")
+	profile := viper.GetString("profile")
+
+	sess := session.Must(
+		session.NewSession(&aws.Config{
+			Credentials: credentials.NewCredentials(&credentials.SharedCredentialsProvider{
+				Filename: defaults.SharedCredentialsFilename(),
+				Profile:  profile,
+			}),
+		}),
+	)
+	svc := sts.New(sess, &aws.Config{Region: aws.String(awsRegion)})
+
+	return svc
+}
+
+func ResetAWSEnvironmentVariable() {
+	os.Unsetenv("AWS_ACCESS_KEY_ID")
+	os.Unsetenv("AWS_SECRET_ACCESS_KEY")
+	os.Unsetenv("AWS_SESSION_TOKEN")
+}
+
+func WhoAmI() error {
+	stsClient :=  getSTSSessionWithoutReset()
+
+	result, err := stsClient.GetCallerIdentity(&sts.GetCallerIdentityInput{})
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(result)
+
+	return nil
+}
+
+func getSTSSessionWithoutReset() *sts.STS {
+	awsRegion := viper.GetString("region")
+
+	sess := session.Must(session.NewSession())
+	svc := sts.New(sess, &aws.Config{Region: aws.String(awsRegion)})
+
+	return svc
 }

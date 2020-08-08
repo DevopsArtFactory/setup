@@ -14,10 +14,21 @@ $ brew install setup
 $ setup version
 ``` 
 
+* If you want to use profile feature in aws cli, then you need to upgrade to the latest version
+- required version >= 1.1.0
+- If you finish upgrade, then you should upgrade configuration via `setup upgrade`
+```bash
+$ brew upgrade setup
+$ brew version 
+v1.1.0
+
+$ setup upgrade
+```
 
 ## How to use
 ### First init setup.
 * Session name should be your original IAM user name in the account from which you log in through console.
+* This will be stored as configuration for default profile.
 ```bash
 $ setup init
 ? Your session name:  <Session name>  
@@ -64,4 +75,13 @@ dev is deleted
 $ setup ls
 [current role list]
 
+```
+
+## Use profile
+* You can use profile with `--profile=<profile>`
+```bash
+$ setup list --profile test
+$ setup add --profile test
+$ setup edit --profile test
+$ setup delete --profile test
 ```

@@ -24,9 +24,9 @@ import (
 
 // initCmd represents the init command
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "show assume role list",
-	Long: `show assume role list`,
+	Use:     "list",
+	Short:   "show assume role list",
+	Long:    `show assume role list`,
 	Aliases: []string{"ls"},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := ListRole(); err != nil {

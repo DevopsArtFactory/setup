@@ -24,9 +24,9 @@ import (
 
 // initCmd represents the init command
 var deleteCmd = &cobra.Command{
-	Use:   "delete",
-	Short: "Delete key",
-	Long: "Delete key",
+	Use:     "delete",
+	Short:   "Delete key",
+	Long:    "Delete key",
 	Aliases: []string{"d"},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := DeleteCmd(); err != nil {
