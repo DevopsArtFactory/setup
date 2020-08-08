@@ -16,20 +16,24 @@ limitations under the License.
 package setup
 
 import (
+	"os"
+
+	"github.com/GwonsooLee/kubenx/pkg/color"
 	"github.com/spf13/cobra"
 )
 
-// helpCmd represents the help command
-var helpCmd = &cobra.Command{
-	Use:     "help",
-	Short:   "show help",
-	Long:    `show help`,
-	Aliases: []string{"h"},
+// initCmd represents the init command
+var upgradeCmd = &cobra.Command{
+	Use:     "upgrade",
+	Short:   "Upgrade configuration to latest version",
+	Long:   "Upgrade configuration to latest version",
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Parent().Help()
+		if err := Upgrade(); err != nil {
+			color.Red.Fprintln(os.Stdout, err.Error())
+		}
 	},
 }
 
 func init() {
-	rootCmd.AddCommand(helpCmd)
+	rootCmd.AddCommand(upgradeCmd)
 }

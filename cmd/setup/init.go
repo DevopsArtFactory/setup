@@ -24,9 +24,9 @@ import (
 
 // initCmd represents the init command
 var initCmd = &cobra.Command{
-	Use:   "init",
-	Short: "Init setup",
-	Long: `Init setup`,
+	Use:     "init",
+	Short:   "Init setup",
+	Long:    `Init setup`,
 	Aliases: []string{"i"},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := Setup(); err != nil {

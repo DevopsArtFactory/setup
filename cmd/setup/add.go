@@ -24,9 +24,9 @@ import (
 
 // addCmd represents the add command
 var addCmd = &cobra.Command{
-	Use:   "add",
-	Short: "Add new assume role",
-	Long:  `Add new assume role`,
+	Use:     "add",
+	Short:   "Add new assume role",
+	Long:    `Add new assume role`,
 	Aliases: []string{"a"},
 	Run: func(cmd *cobra.Command, args []string) {
 		if err := AddNewAssumeRole(args); err != nil {

@@ -24,12 +24,12 @@ import (
 
 // versionCmd represents the version command
 var versionCmd = &cobra.Command{
-	Use:   "version",
-	Short: "Check version of setup",
-	Long:  "Check version of setup",
+	Use:     "version",
+	Short:   "Check version of setup",
+	Long:    "Check version of setup",
 	Aliases: []string{"v"},
 	Run: func(cmd *cobra.Command, args []string) {
-		version := "1.0.0"
+		version := "1.1.0"
 		color.Blue.Fprintf(os.Stdout, "v%s", version)
 	},
 }
